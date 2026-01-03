@@ -2,7 +2,9 @@ import express from "express";
 import multer from "multer";
 import auth from "../middleware/auth.js";
 import User from "../models/User.js";
+import ChatUser from "../models/ChatUser.js";
 import Staff from "../models/staffModel.js";
+import Astrologer from "../models/Astrologer.js";
 import {
   getCities,
   addCity,
@@ -48,6 +50,7 @@ import {
   deleteQuestion,getNextQuestion,
 } from "../controllers/questionController.js";
 
+
 const router = express.Router();
 
 // Dashboard route (basic info)
@@ -66,13 +69,19 @@ router.get("/dashboard", auth, async (req, res) => {
 // Profile route (full profile)
 router.get("/doctor-panel-profile", auth, async (req, res) => {
   try {
-    const role = req.headers.role; // ya req.user.role (BEST)
+    const role = req.headers.role; // ✅ ALWAYS from auth middleware
+    let profile = null;
 
-    let profile;
-
-    if (role === "staff") {
+    if (role == "staff") {
       profile = await Staff.findById(req.user.id).select("-password");
-    } else {
+    } 
+    else if (role == "astro") {
+      profile = await Astrologer.findById(req.user.id).select("-password");
+    } 
+    else if (role == "chatuser") {
+      profile = await ChatUser.findById(req.user.id).select("-password");
+    } 
+    else {
       profile = await User.findById(req.user.id).select("-password");
     }
 
@@ -83,19 +92,20 @@ router.get("/doctor-panel-profile", auth, async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       user: profile,
     });
+
   } catch (error) {
     console.error("Doctor Panel Profile Error:", error);
-
     res.status(500).json({
       success: false,
       message: error.message || "Server error",
     });
   }
 });
+
 
 
 router.put("/doctor-panel-update-profile", auth, async (req, res) => {
@@ -206,4 +216,7 @@ router.post("/questions", createQuestion);
 router.put("/questions/:id", updateQuestion);
 router.delete("/questions/:id", deleteQuestion);
 router.get("/questions/next", getNextQuestion);
+
+
+
 export default router;

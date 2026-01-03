@@ -25,34 +25,36 @@ connectDB();
 app.use("/api", publicRoutes);
 app.use("/api", protectedRoutes);
 app.use("/api/messages", messageRoutes);
+
 /* ---------- SOCKET SETUP ---------- */
 const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "*", // frontend URL later yahan daal dena
-    methods: ["GET", "POST"]
-  }
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
 });
 
 /* ---------- SOCKET LOGIC ---------- */
 io.on("connection", (socket) => {
   console.log("Socket connected:", socket.id);
 
-  // user joins with userId
   socket.on("join", (userId) => {
-    socket.join(userId); // room = userId
+    socket.join(userId);
     console.log(`User ${userId} joined room`);
   });
 
-  // send message
-  socket.on("sendMessage", ({ senderId, receiverId, text }) => {
-    io.to(receiverId).emit("receiveMessage", {
-      senderId,
-      receiverId,
-      text,
-      createdAt: new Date()
-    });
+  /**
+   * IMPORTANT:
+   * frontend se jo message aata hai
+   * wahi exact object emit karna hai
+   */
+  socket.on("sendMessage", (message) => {
+    if (!message?.receiverId || !message?._id) return;
+
+    // ❌ sender ko mat bhejo (sender already UI me add kar chuka hota hai)
+    io.to(message.receiverId).emit("receiveMessage", message);
   });
 
   socket.on("disconnect", () => {
@@ -63,6 +65,6 @@ io.on("connection", (socket) => {
 /* ---------- SERVER ---------- */
 const PORT = process.env.PORT || 5000;
 
-server.listen(PORT, () => {
+server.listen(PORT,"0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
 });
