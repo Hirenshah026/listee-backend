@@ -4,7 +4,8 @@ const messageSchema = new mongoose.Schema(
   {
     text: {
       type: String,
-      required: true
+      required: false,
+      default: ""
     },
     senderId: {
       type: String,
@@ -13,7 +14,8 @@ const messageSchema = new mongoose.Schema(
     receiverId: {
       type: String,
       required: true
-    }
+    },
+    image: { type: String, sparse: true, default: null},
   },
   { timestamps: true } // createdAt, updatedAt auto add
 );

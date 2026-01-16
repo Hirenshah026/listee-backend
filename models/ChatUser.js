@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 const userSchema = new mongoose.Schema({
     name: { type: String, default: null},
-    email: { type: String, default: null},
+    email: { type: String, default: 'user@gmail.com'},
     password: { type: String, default: null},
     role: { type: String, default: "chatuser" },
     
@@ -11,5 +11,7 @@ const userSchema = new mongoose.Schema({
     
     active: { type: Boolean, default: true },
     show: { type: Boolean, default: true },
+    isPlanActive: { type: Boolean, default: false },
+    freeChatTime: { type: Number, default: 120 },
 }, { timestamps: true });
 export default mongoose.model("ChatUser", userSchema);

@@ -1,8 +1,20 @@
 import express from "express";
 import Message from "../models/Message.js";
 import User from "../models/ChatUser.js";
+import multer from "multer"; // Multer ko sirf aise import karein
 
 const router = express.Router();
+
+/* ================= MULTER SETUP ================= */
+// Storage setup (Ek baar declare karein)
+const storage = multer.diskStorage({
+  destination: "uploads_mess/",
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + "-" + file.originalname);
+  },
+});
+
+const upload = multer({ storage });
 
 /* ================= USERS LIST FOR ASTRO ================= */
 router.get("/users/:astroId", getAstroChatUsers);
@@ -11,7 +23,6 @@ router.get("/users/:astroId", getAstroChatUsers);
 router.get("/last/:senderId/:receiverId", async (req, res) => {
   try {
     const { senderId, receiverId } = req.params;
-
     const lastMessage = await Message.findOne({
       $or: [
         { senderId, receiverId },
@@ -31,7 +42,6 @@ router.get("/last/:senderId/:receiverId", async (req, res) => {
 /* ================= GET MESSAGES BETWEEN TWO USERS ================= */
 router.get("/:user1/:user2", async (req, res) => {
   const { user1, user2 } = req.params;
-
   try {
     const messages = await Message.find({
       $or: [
@@ -40,60 +50,61 @@ router.get("/:user1/:user2", async (req, res) => {
       ],
     }).sort({ createdAt: 1 });
 
-    res.json({
-      success: true,
-      messages,
-    });
+    res.json({ success: true, messages });
   } catch (err) {
     console.error("❌ Get Messages Error:", err);
     res.status(500).json({ success: false });
   }
 });
 
-/* ================= SAVE MESSAGE ================= */
-router.post("/", async (req, res) => {
+/* ================= SAVE MESSAGE (Text + Optional Image) ================= */
+router.post("/", upload.single("image"), async (req, res) => {
   const { text, senderId, receiverId } = req.body;
 
-  if (!text || !senderId || !receiverId) {
+  if (!senderId || !receiverId) {
     return res.status(400).json({
       success: false,
-      message: "text, senderId and receiverId are required",
+      message: "senderId and receiverId are required",
+    });
+  }
+
+  if (!text && !req.file) {
+    return res.status(400).json({
+      success: false,
+      message: "Please provide either text or an image",
     });
   }
 
   try {
+    // Check karo agar file aayi hai toh path banao
+    const filePath = req.file ? `http://10.93.65.180:5000/uploads_mess/${req.file.filename}` : null;
+
     const message = await Message.create({
-      text,
+      text: text || "",
       senderId,
       receiverId,
+      image: filePath,
     });
 
-    res.json({
-      success: true,
-      message,
-    });
+    res.json({ success: true, message });
   } catch (err) {
     console.error("❌ Save Message Error:", err);
-    res.status(500).json({ success: false });
+    res.status(500).json({ success: false, message: err});
   }
 });
 
-/* ================= CONTROLLER ================= */
+/* ================= CONTROLLER FUNCTION ================= */
 async function getAstroChatUsers(req, res) {
   try {
     const { astroId } = req.params;
-
     const messages = await Message.find({
       $or: [{ senderId: astroId }, { receiverId: astroId }],
     }).select("senderId receiverId");
 
     const userIds = new Set();
-
     messages.forEach((msg) => {
-      if (msg.senderId.toString() !== astroId)
-        userIds.add(msg.senderId.toString());
-      if (msg.receiverId.toString() !== astroId)
-        userIds.add(msg.receiverId.toString());
+      if (msg.senderId.toString() !== astroId) userIds.add(msg.senderId.toString());
+      if (msg.receiverId.toString() !== astroId) userIds.add(msg.receiverId.toString());
     });
 
     const users = await User.find({
