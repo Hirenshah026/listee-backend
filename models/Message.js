@@ -16,6 +16,7 @@ const messageSchema = new mongoose.Schema(
       required: true
     },
     image: { type: String, sparse: true, default: null},
+    read: { type: Boolean, default: false },
   },
   { timestamps: true } // createdAt, updatedAt auto add
 );
