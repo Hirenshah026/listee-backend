@@ -23,22 +23,55 @@ router.get("/users/:astroId", getAstroChatUsers);
 router.get("/last/:senderId/:receiverId", async (req, res) => {
   try {
     const { senderId, receiverId } = req.params;
+
+    // 1. Sabse aakhiri message nikaalein
     const lastMessage = await Message.findOne({
       $or: [
         { senderId, receiverId },
         { senderId: receiverId, receiverId: senderId },
       ],
     })
-      .sort({ createdAt: -1 })
-      .lean();
+    .sort({ createdAt: -1 })
+    .lean();
 
-    return res.status(200).json(lastMessage || null);
+    // 2. Unread messages count karein 
+    // (Wo messages jo 'senderId' ne bheje hain aur 'receiverId' ne abhi nahi padhe)
+    const unreadCount = await Message.countDocuments({
+      senderId: receiverId, // Saamne wala user
+      receiverId: senderId, // Aap (Astro)
+      read: false,
+    });
+
+    if (!lastMessage) {
+      return res.status(200).json({ text: "No messages", unreadCount: 0 });
+    }
+
+    // Dono ko milakar bhejein
+    return res.status(200).json({
+      ...lastMessage,
+      unreadCount: unreadCount,
+    });
   } catch (err) {
     console.error(err);
-    return res.status(500).json(null);
+    return res.status(500).json({ error: "Server error" });
   }
 });
+router.post("/mark-read", async (req, res) => {
+  try {
+    const { senderId, receiverId } = req.body;
 
+    // Saamne wale ke bheje gaye saare messages ko read: true kar do
+    await Message.updateMany(
+      { senderId: senderId, receiverId: receiverId, read: false },
+      { $set: { read: true } }
+    );
+
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Could not mark as read" });
+  }
+});
 /* ================= GET MESSAGES BETWEEN TWO USERS ================= */
 router.get("/:user1/:user2", async (req, res) => {
   const { user1, user2 } = req.params;
@@ -97,6 +130,8 @@ router.post("/", upload.single("image"), async (req, res) => {
 async function getAstroChatUsers(req, res) {
   try {
     const { astroId } = req.params;
+    
+    // 1. Astro se related saare messages nikaalein
     const messages = await Message.find({
       $or: [{ senderId: astroId }, { receiverId: astroId }],
     }).select("senderId receiverId");
@@ -107,9 +142,11 @@ async function getAstroChatUsers(req, res) {
       if (msg.receiverId.toString() !== astroId) userIds.add(msg.receiverId.toString());
     });
 
+    // 2. FIXED: Yahan "mobile" field ko bhi select mein add kiya hai
+    // Agar aapke Model mein field ka naam "phone" hai, toh "name image phone" likhein
     const users = await User.find({
       _id: { $in: [...userIds] },
-    }).select("name image");
+    }).select("name image mobile"); 
 
     return res.status(200).json({ users });
   } catch (error) {
@@ -117,5 +154,4 @@ async function getAstroChatUsers(req, res) {
     return res.status(500).json({ message: "Server error" });
   }
 }
-
 export default router;
