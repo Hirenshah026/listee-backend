@@ -110,7 +110,7 @@ router.post("/", upload.single("image"), async (req, res) => {
 
   try {
     // Check karo agar file aayi hai toh path banao
-    const filePath = req.file ? `http://10.93.65.180:5000/uploads_mess/${req.file.filename}` : null;
+    const filePath = req.file ? `https://listee-backend.onrender.com/uploads_mess/${req.file.filename}` : null;
 
     const message = await Message.create({
       text: text || "",
@@ -154,4 +154,5 @@ async function getAstroChatUsers(req, res) {
     return res.status(500).json({ message: "Server error" });
   }
 }
+
 export default router;
