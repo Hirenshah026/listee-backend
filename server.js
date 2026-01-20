@@ -4,120 +4,171 @@ import cors from "cors";
 import http from "http";
 import { Server } from "socket.io";
 import connectDB from "./config/db.js";
+
 import publicRoutes from "./routes/publicRoutes.js";
 import protectedRoutes from "./routes/protectedRoutes.js";
 import messageRoutes from "./routes/messageRoutes.js";
 import User from "./models/ChatUser.js";
 
 dotenv.config();
+connectDB();
+
 const app = express();
-app.use(cors());
+
+/* -------------------- MIDDLEWARE -------------------- */
+app.use(cors({ origin: "*", methods: ["GET", "POST"] }));
 app.use(express.json());
+
 app.use("/uploads", express.static("uploads"));
 app.use("/uploads_mess", express.static("uploads_mess"));
 
-connectDB();
-
+/* -------------------- API ROUTES -------------------- */
 app.use("/api", publicRoutes);
 app.use("/api", protectedRoutes);
 app.use("/api/messages", messageRoutes);
 
+/* -------------------- SOCKET SERVER -------------------- */
 const server = http.createServer(app);
+
 const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] },
+  cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
+/* -------------------- STATE -------------------- */
+
+// userId => socketId
+const userSocketMap = {};
+
+// chat timer storage
 const chatSessions = {};
-let userSocketMap = {}; // Sabse important mapping
 
+/* -------------------- SOCKET EVENTS -------------------- */
 io.on("connection", (socket) => {
-  console.log("Socket Connected:", socket.id);
+  console.log("🔌 Socket connected:", socket.id);
 
-  // 1. REGISTER & JOIN (Sab ke liye common)
+  /* ---------- REGISTER USER / ASTRO ---------- */
   socket.on("join", (userId) => {
     if (!userId) return;
-    socket.join(userId);
-    userSocketMap[userId] = socket.id; // User ID ko Socket ID se link kiya
-    console.log(`User/Astro ${userId} joined and mapped`);
+    userSocketMap[userId] = socket.id;
+    socket.userId = userId;
+    console.log(`✅ Registered ${userId} → ${socket.id}`);
   });
 
   socket.on("register-user", (userId) => {
+    if (!userId) return;
     userSocketMap[userId] = socket.id;
   });
 
-  // 2. CHAT & MESSAGE LOGIC
+  /* ---------- CHAT MESSAGE ---------- */
   socket.on("sendMessage", (message) => {
     if (!message?.receiverId) return;
-    io.to(message.receiverId).emit("receiveMessage", message);
+    const receiverSocket = userSocketMap[message.receiverId];
+    if (receiverSocket) {
+      io.to(receiverSocket).emit("receiveMessage", message);
+    }
   });
 
   socket.on("messages-read", ({ senderId, receiverId }) => {
-    if (!senderId || !receiverId) return;
-    io.to(senderId).emit("messages-read-update", { senderId, receiverId, read: true });
+    const senderSocket = userSocketMap[senderId];
+    if (senderSocket) {
+      io.to(senderSocket).emit("messages-read-update", {
+        senderId,
+        receiverId,
+        read: true
+      });
+    }
   });
 
-  // 3. CHAT TIMER LOGIC
+  /* ---------- CHAT TIMER ---------- */
   socket.on("start-chat-timer", ({ userId, astroId, initialTime }) => {
     const roomId = [userId, astroId].sort().join("_");
     socket.join(roomId);
-    if (!chatSessions[roomId]) {
-      chatSessions[roomId] = {
-        timeLeft: initialTime,
-        interval: setInterval(async () => {
-          if (chatSessions[roomId].timeLeft > 0) {
-            chatSessions[roomId].timeLeft -= 1;
-            io.to(roomId).emit("timer-update", { timeLeft: chatSessions[roomId].timeLeft });
-          } else {
-            clearInterval(chatSessions[roomId].interval);
-            try {
-              await User.findByIdAndUpdate(userId, { freeChatTime: 0 });
-              io.to(roomId).emit("timer-ended");
-            } catch (err) { console.error(err); }
-            delete chatSessions[roomId];
-          }
-        }, 1000)
-      };
-    }
+
+    if (chatSessions[roomId]) return;
+
+    chatSessions[roomId] = {
+      timeLeft: initialTime,
+      interval: setInterval(async () => {
+        if (chatSessions[roomId].timeLeft > 0) {
+          chatSessions[roomId].timeLeft--;
+          io.to(roomId).emit("timer-update", {
+            timeLeft: chatSessions[roomId].timeLeft
+          });
+        } else {
+          clearInterval(chatSessions[roomId].interval);
+          await User.findByIdAndUpdate(userId, { freeChatTime: 0 });
+          io.to(roomId).emit("timer-ended");
+          delete chatSessions[roomId];
+        }
+      }, 1000)
+    };
   });
 
-  // 4. --- 1-ON-1 CALL LOGIC (TERA PURANA CODE) ---
-  socket.on("call-user", (data) => io.to(data.to).emit("call-made", data));
-  socket.on("make-answer", (data) => io.to(data.to).emit("answer-made", data));
-  socket.on("end-call", (data) => io.to(data.to).emit("call-ended"));
+  /* ---------- 1-ON-1 CALL ---------- */
+  socket.on("call-user", ({ to, offer }) => {
+    io.to(to).emit("call-made", { from: socket.id, offer });
+  });
 
-  // 5. --- LIVE STREAMING LOGIC (NAYA CODE) ---
+  socket.on("make-answer", ({ to, answer }) => {
+    io.to(to).emit("answer-made", { from: socket.id, answer });
+  });
+
+  socket.on("end-call", ({ to }) => {
+    io.to(to).emit("call-ended");
+  });
+
+  /* =====================================================
+     =============== LIVE STREAM (ASTRO) =================
+     ===================================================== */
+
+  /* Viewer joins astro live */
   socket.on("join-live-room", ({ astroId }) => {
     const astroSocketId = userSocketMap[astroId];
-    if (astroSocketId) {
-      io.to(astroSocketId).emit("new-viewer", { viewerId: socket.id });
+    if (!astroSocketId) {
+      console.log("❌ Astro offline:", astroId);
+      return;
     }
+
+    console.log(`👀 Viewer ${socket.id} joined astro ${astroId}`);
+    io.to(astroSocketId).emit("new-viewer", {
+      viewerId: socket.id
+    });
   });
 
+  /* Astro sends offer to viewer */
   socket.on("send-offer-to-viewer", ({ to, offer }) => {
-    io.to(to).emit("offer-from-astro", { offer, from: socket.id });
+    io.to(to).emit("offer-from-astro", {
+      from: socket.id,
+      offer
+    });
   });
 
+  /* Viewer sends answer */
   socket.on("answer-to-astro", ({ to, answer }) => {
-    io.to(to).emit("answer-from-viewer", { from: socket.id, answer });
+    io.to(to).emit("answer-from-viewer", {
+      from: socket.id,
+      answer
+    });
   });
 
-  // Common ICE Candidates (1-on-1 aur Live dono mein kaam aayega)
-  socket.on("ice-candidate", (data) => {
-    if (data.to) {
-      io.to(data.to).emit("ice-candidate", data);
+  /* ICE candidates (shared) */
+  socket.on("ice-candidate", ({ to, candidate }) => {
+    if (to && candidate) {
+      io.to(to).emit("ice-candidate", { candidate });
     }
   });
 
-  // DISCONNECT
+  /* ---------- DISCONNECT ---------- */
   socket.on("disconnect", () => {
-    for (const [userId, socketId] of Object.entries(userSocketMap)) {
-      if (socketId === socket.id) {
-        delete userSocketMap[userId];
-        break;
-      }
+    if (socket.userId) {
+      delete userSocketMap[socket.userId];
     }
-    console.log("Disconnected:", socket.id);
+    console.log("❌ Socket disconnected:", socket.id);
   });
 });
 
-server.listen(5000, "0.0.0.0", () => console.log(`Server running on 5000`));
+/* -------------------- START SERVER -------------------- */
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, "0.0.0.0", () =>
+  console.log(`🚀 Server running on port ${PORT}`)
+);
