@@ -33,8 +33,8 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST"],
-  },
+    methods: ["GET", "POST"]
+  }
 });
 
 /* -------------------- STATE -------------------- */
@@ -51,10 +51,10 @@ io.on("connection", (socket) => {
     if (!userId) return;
     userSocketMap[userId] = socket.id;
     socket.userId = userId;
-    console.log(`✅ JOIN: ${userId} -> ${socket.id}`);
+    console.log(`✅ JOIN ${userId} → ${socket.id}`);
   });
 
-  /* ---------- CHAT MESSAGE ---------- */
+  /* ---------- CHAT ---------- */
   socket.on("sendMessage", (message) => {
     const receiverSocket = userSocketMap[message?.receiverId];
     if (receiverSocket) {
@@ -68,7 +68,7 @@ io.on("connection", (socket) => {
       io.to(senderSocket).emit("messages-read-update", {
         senderId,
         receiverId,
-        read: true,
+        read: true
       });
     }
   });
@@ -86,7 +86,7 @@ io.on("connection", (socket) => {
         if (chatSessions[roomId].timeLeft > 0) {
           chatSessions[roomId].timeLeft--;
           io.to(roomId).emit("timer-update", {
-            timeLeft: chatSessions[roomId].timeLeft,
+            timeLeft: chatSessions[roomId].timeLeft
           });
         } else {
           clearInterval(chatSessions[roomId].interval);
@@ -94,7 +94,7 @@ io.on("connection", (socket) => {
           io.to(roomId).emit("timer-ended");
           delete chatSessions[roomId];
         }
-      }, 1000),
+      }, 1000)
     };
   });
 
@@ -106,42 +106,42 @@ io.on("connection", (socket) => {
   socket.on("join-live-room", ({ astroId }) => {
     const astroSocketId = userSocketMap[astroId];
 
-    console.log("👀 Viewer joined:", socket.id, "Astro:", astroId);
+    console.log("👀 Viewer", socket.id, "wants astro", astroId);
 
     if (!astroSocketId) {
-      console.log("❌ Astro offline:", astroId);
+      console.log("❌ Astro offline");
       return;
     }
 
     io.to(astroSocketId).emit("new-viewer", {
-      viewerSocketId: socket.id,
+      viewerId: socket.id
     });
   });
 
-  // ASTRO sends offer
+  // ASTRO sends offer to viewer
   socket.on("send-offer-to-viewer", ({ to, offer }) => {
     io.to(to).emit("offer-from-astro", {
       from: socket.id,
-      offer,
+      offer
     });
   });
 
-  // VIEWER sends answer
+  // VIEWER sends answer to astro
   socket.on("answer-to-astro", ({ to, answer }) => {
     io.to(to).emit("answer-from-viewer", {
       from: socket.id,
-      answer,
+      answer
     });
   });
 
-  // ICE exchange (BOTH sides)
+  // ICE candidates (both sides)
   socket.on("ice-candidate", ({ to, candidate }) => {
-    if (to && candidate) {
-      io.to(to).emit("ice-candidate", {
-        from: socket.id,
-        candidate,
-      });
-    }
+    if (!to || !candidate) return;
+
+    io.to(to).emit("ice-candidate", {
+      from: socket.id,
+      candidate
+    });
   });
 
   /* ---------- DISCONNECT ---------- */
@@ -149,6 +149,11 @@ io.on("connection", (socket) => {
     if (socket.userId) {
       delete userSocketMap[socket.userId];
     }
+
+    socket.broadcast.emit("viewer-disconnected", {
+      viewerId: socket.id
+    });
+
     console.log("❌ Disconnected:", socket.id);
   });
 });
@@ -156,5 +161,5 @@ io.on("connection", (socket) => {
 /* -------------------- START -------------------- */
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Server running on ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
