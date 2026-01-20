@@ -27,42 +27,36 @@ app.use("/api", publicRoutes);
 app.use("/api", protectedRoutes);
 app.use("/api/messages", messageRoutes);
 
-/* -------------------- SOCKET SERVER -------------------- */
+/* -------------------- SERVER -------------------- */
 const server = http.createServer(app);
 
 const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] }
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
 });
 
 /* -------------------- STATE -------------------- */
-
 // userId => socketId
 const userSocketMap = {};
-
-// chat timer storage
 const chatSessions = {};
 
-/* -------------------- SOCKET EVENTS -------------------- */
+/* -------------------- SOCKET -------------------- */
 io.on("connection", (socket) => {
-  console.log("🔌 Socket connected:", socket.id);
+  console.log("🔌 Connected:", socket.id);
 
   /* ---------- REGISTER USER / ASTRO ---------- */
   socket.on("join", (userId) => {
     if (!userId) return;
     userSocketMap[userId] = socket.id;
     socket.userId = userId;
-    console.log(`✅ Registered ${userId} → ${socket.id}`);
-  });
-
-  socket.on("register-user", (userId) => {
-    if (!userId) return;
-    userSocketMap[userId] = socket.id;
+    console.log(`✅ JOIN: ${userId} -> ${socket.id}`);
   });
 
   /* ---------- CHAT MESSAGE ---------- */
   socket.on("sendMessage", (message) => {
-    if (!message?.receiverId) return;
-    const receiverSocket = userSocketMap[message.receiverId];
+    const receiverSocket = userSocketMap[message?.receiverId];
     if (receiverSocket) {
       io.to(receiverSocket).emit("receiveMessage", message);
     }
@@ -74,7 +68,7 @@ io.on("connection", (socket) => {
       io.to(senderSocket).emit("messages-read-update", {
         senderId,
         receiverId,
-        read: true
+        read: true,
       });
     }
   });
@@ -92,7 +86,7 @@ io.on("connection", (socket) => {
         if (chatSessions[roomId].timeLeft > 0) {
           chatSessions[roomId].timeLeft--;
           io.to(roomId).emit("timer-update", {
-            timeLeft: chatSessions[roomId].timeLeft
+            timeLeft: chatSessions[roomId].timeLeft,
           });
         } else {
           clearInterval(chatSessions[roomId].interval);
@@ -100,61 +94,53 @@ io.on("connection", (socket) => {
           io.to(roomId).emit("timer-ended");
           delete chatSessions[roomId];
         }
-      }, 1000)
+      }, 1000),
     };
   });
 
-  /* ---------- 1-ON-1 CALL ---------- */
-  socket.on("call-user", ({ to, offer }) => {
-    io.to(to).emit("call-made", { from: socket.id, offer });
-  });
-
-  socket.on("make-answer", ({ to, answer }) => {
-    io.to(to).emit("answer-made", { from: socket.id, answer });
-  });
-
-  socket.on("end-call", ({ to }) => {
-    io.to(to).emit("call-ended");
-  });
-
   /* =====================================================
-     =============== LIVE STREAM (ASTRO) =================
+     ================= LIVE STREAM ======================
      ===================================================== */
 
-  /* Viewer joins astro live */
+  // VIEWER joins astro live
   socket.on("join-live-room", ({ astroId }) => {
     const astroSocketId = userSocketMap[astroId];
+
+    console.log("👀 Viewer joined:", socket.id, "Astro:", astroId);
+
     if (!astroSocketId) {
       console.log("❌ Astro offline:", astroId);
       return;
     }
 
-    console.log(`👀 Viewer ${socket.id} joined astro ${astroId}`);
     io.to(astroSocketId).emit("new-viewer", {
-      viewerId: socket.id
+      viewerSocketId: socket.id,
     });
   });
 
-  /* Astro sends offer to viewer */
+  // ASTRO sends offer
   socket.on("send-offer-to-viewer", ({ to, offer }) => {
     io.to(to).emit("offer-from-astro", {
       from: socket.id,
-      offer
+      offer,
     });
   });
 
-  /* Viewer sends answer */
+  // VIEWER sends answer
   socket.on("answer-to-astro", ({ to, answer }) => {
     io.to(to).emit("answer-from-viewer", {
       from: socket.id,
-      answer
+      answer,
     });
   });
 
-  /* ICE candidates (shared) */
+  // ICE exchange (BOTH sides)
   socket.on("ice-candidate", ({ to, candidate }) => {
     if (to && candidate) {
-      io.to(to).emit("ice-candidate", { candidate });
+      io.to(to).emit("ice-candidate", {
+        from: socket.id,
+        candidate,
+      });
     }
   });
 
@@ -163,12 +149,12 @@ io.on("connection", (socket) => {
     if (socket.userId) {
       delete userSocketMap[socket.userId];
     }
-    console.log("❌ Socket disconnected:", socket.id);
+    console.log("❌ Disconnected:", socket.id);
   });
 });
 
-/* -------------------- START SERVER -------------------- */
+/* -------------------- START -------------------- */
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, "0.0.0.0", () =>
-  console.log(`🚀 Server running on port ${PORT}`)
-);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server running on ${PORT}`);
+});
