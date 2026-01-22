@@ -11,55 +11,111 @@ import User from "./models/ChatUser.js";
 
 dotenv.config();
 const app = express();
+
+// Middlewares
 app.use(cors());
 app.use(express.json());
+app.use("/uploads", express.static("uploads"));
+app.use("/uploads_mess", express.static("uploads_mess"));
+
+// Database Connection
 connectDB();
 
+// API Routes
 app.use("/api", publicRoutes);
 app.use("/api", protectedRoutes);
 app.use("/api/messages", messageRoutes);
 
 const server = http.createServer(app);
+
 const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] },
-  transports: ["websocket", "polling"]
+  cors: { origin: "*", methods: ["GET", "POST"], credentials: true },
+  transports: ["websocket", "polling"],
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000,
 });
 
+// States
+const chatSessions = {};
 let userSocketMap = {}; 
 let liveRooms = {}; 
-let chatSessions = {};
 
 io.on("connection", (socket) => {
-  // --- Registration ---
+  console.log("Socket Connected:", socket.id);
+
+  // --- 1. REGISTRATION ---
   socket.on("join", (userId) => {
     if (!userId) return;
     socket.join(userId);
     userSocketMap[userId] = socket.id;
   });
 
-  // --- Live Stream Logic (Fix) ---
+  socket.on("register-user", (userId) => {
+    userSocketMap[userId] = socket.id;
+  });
+
+  // --- 2. ONE-TO-ONE CHAT LOGIC ---
+  socket.on("sendMessage", (message) => {
+    if (!message?.receiverId) return;
+    const receiverSocketId = userSocketMap[message.receiverId];
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("receiveMessage", message);
+    }
+  });
+
+  // --- 3. CHAT TIMER LOGIC ---
+  socket.on("start-chat-timer", ({ userId, astroId, initialTime }) => {
+    const roomId = [userId, astroId].sort().join("_");
+    socket.join(roomId);
+    
+    if (!chatSessions[roomId]) {
+      chatSessions[roomId] = {
+        timeLeft: initialTime,
+        interval: setInterval(async () => {
+          if (chatSessions[roomId].timeLeft > 0) {
+            chatSessions[roomId].timeLeft -= 1;
+            io.to(roomId).emit("timer-update", { timeLeft: chatSessions[roomId].timeLeft });
+          } else {
+            clearInterval(chatSessions[roomId].interval);
+            try {
+              await User.findByIdAndUpdate(userId, { freeChatTime: 0 });
+              io.to(roomId).emit("timer-ended");
+            } catch (err) { console.error("Timer DB Error:", err); }
+            delete chatSessions[roomId];
+          }
+        }, 1000)
+      };
+    }
+  });
+
+  // --- 4. LIVE STREAMING LOGIC (FIXED) ---
   socket.on("join-live-room", ({ astroId, role }) => {
+    if (!astroId) return;
     const roomName = `live_room_${astroId}`;
     socket.join(roomName);
     
     if (!liveRooms[astroId]) liveRooms[astroId] = new Set();
     liveRooms[astroId].add(socket.id);
 
-    // Update count for everyone
+    // Count sabko bhejein
     io.to(roomName).emit("update-viewers", liveRooms[astroId].size);
 
     if (role === "viewer") {
       const astroSocketId = userSocketMap[astroId];
-      if (astroSocketId) io.to(astroSocketId).emit("new-viewer", { viewerId: socket.id });
+      if (astroSocketId) {
+        io.to(astroSocketId).emit("new-viewer", { viewerId: socket.id });
+      }
     }
   });
 
   socket.on("send-message", (data) => {
     const targetRoom = data.roomId || `live_room_${data.astroId}`;
-    io.to(targetRoom).emit("receive-message", data); // Pure room ko jayega
+    // io.to pure room ko broadcast karega (Host + All Viewers)
+    io.to(targetRoom).emit("receive-message", data);
   });
 
-  // --- WebRTC Signaling ---
+  // --- 5. WEBRTC SIGNALING ---
   socket.on("send-offer-to-viewer", ({ to, offer }) => {
     io.to(to).emit("offer-from-astro", { offer, from: socket.id });
   });
@@ -69,28 +125,23 @@ io.on("connection", (socket) => {
   });
 
   socket.on("ice-candidate", (data) => {
-    if (data.to) io.to(data.to).emit("ice-candidate", { candidate: data.candidate, from: socket.id });
+    if (data.to) {
+      io.to(data.to).emit("ice-candidate", { candidate: data.candidate, from: socket.id });
+    }
   });
 
-  // --- Timer & One-to-One Chat ---
-  socket.on("sendMessage", (message) => {
-    const receiverSocketId = userSocketMap[message.receiverId];
-    if (receiverSocketId) io.to(receiverSocketId).emit("receiveMessage", message);
-  });
-
-  // --- Disconnect Cleanup ---
   socket.on("disconnect", () => {
-    for (const astroId in liveRooms) {
+    Object.keys(liveRooms).forEach(astroId => {
       if (liveRooms[astroId].has(socket.id)) {
         liveRooms[astroId].delete(socket.id);
         io.to(`live_room_${astroId}`).emit("update-viewers", liveRooms[astroId].size);
       }
-    }
-    for (const uid in userSocketMap) {
-      if (userSocketMap[uid] === socket.id) delete userSocketMap[uid];
+    });
+    for (const [uid, sid] of Object.entries(userSocketMap)) {
+      if (sid === socket.id) { delete userSocketMap[uid]; break; }
     }
   });
 });
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, "0.0.0.0", () => console.log(`Server running on ${PORT}`));
+server.listen(PORT, "0.0.0.0", () => console.log(`Server running on port ${PORT}`));
