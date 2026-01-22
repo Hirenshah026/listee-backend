@@ -27,11 +27,14 @@ app.use("/api", protectedRoutes);
 app.use("/api/messages", messageRoutes);
 
 const server = http.createServer(app);
+
+// Render Optimization: Polling and WebSocket both allowed
 const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] },
+  cors: { origin: "*", methods: ["GET", "POST"], credentials: true },
+  transports: ["polling", "websocket"],
 });
 
-// States for Chat & Live
+// States
 const chatSessions = {};
 let userSocketMap = {}; 
 let liveRooms = {}; // { astroId: Set(viewerSocketIds) }
@@ -51,7 +54,7 @@ io.on("connection", (socket) => {
     userSocketMap[userId] = socket.id;
   });
 
-  // --- 2. ONE-TO-ONE CHAT LOGIC (Purana) ---
+  // --- 2. ONE-TO-ONE CHAT LOGIC (IMPORTANT) ---
   socket.on("sendMessage", (message) => {
     if (!message?.receiverId) return;
     const receiverSocketId = userSocketMap[message.receiverId];
@@ -68,7 +71,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  // --- 3. CHAT TIMER LOGIC (Purana) ---
+  // --- 3. CHAT TIMER LOGIC (IMPORTANT) ---
   socket.on("start-chat-timer", ({ userId, astroId, initialTime }) => {
     const roomId = [userId, astroId].sort().join("_");
     socket.join(roomId);
@@ -83,7 +86,6 @@ io.on("connection", (socket) => {
           } else {
             clearInterval(chatSessions[roomId].interval);
             try {
-              // Free time khatam hone par DB update
               await User.findByIdAndUpdate(userId, { freeChatTime: 0 });
               io.to(roomId).emit("timer-ended");
             } catch (err) { console.error("Timer DB Error:", err); }
@@ -94,7 +96,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  // --- 4. ONE-TO-ONE VIDEO CALL LOGIC (Purana) ---
+  // --- 4. ONE-TO-ONE VIDEO CALL LOGIC ---
   socket.on("call-user", (data) => {
     const receiverSocketId = userSocketMap[data.to];
     if (receiverSocketId) io.to(receiverSocketId).emit("call-made", data);
@@ -110,11 +112,14 @@ io.on("connection", (socket) => {
     if (receiverSocketId) io.to(receiverSocketId).emit("call-ended");
   });
 
-  // --- 5. LIVE STREAMING LOGIC (Naya) ---
+  // --- 5. LIVE STREAMING LOGIC (NAYA & ROBUST) ---
   socket.on("join-live-room", ({ astroId, role }) => {
+    if (!astroId) return;
     const roomName = `live_room_${astroId}`;
     socket.join(roomName);
     
+    console.log(`Live Room Join: ${socket.id} as ${role} in ${roomName}`);
+
     if (role === "viewer") {
       if (!liveRooms[astroId]) liveRooms[astroId] = new Set();
       liveRooms[astroId].add(socket.id);
@@ -130,12 +135,16 @@ io.on("connection", (socket) => {
   });
 
   socket.on("send-message", (data) => {
-    // Live stream chat relay
-    io.to(`live_room_${data.roomId}`).emit("receive-message", data);
+    const id = data.roomId || data.astroId;
+    if (!id) return;
+    // Room name handling with prefix safety
+    const targetRoom = id.startsWith("live_room_") ? id : `live_room_${id}`;
+    io.to(targetRoom).emit("receive-message", data);
   });
 
   socket.on("end-stream", ({ astroId }) => {
-    io.to(`live_room_${astroId}`).emit("stream-ended");
+    const roomName = `live_room_${astroId}`;
+    io.to(roomName).emit("stream-ended");
     delete liveRooms[astroId];
   });
 
@@ -156,7 +165,7 @@ io.on("connection", (socket) => {
 
   // --- 7. CLEANUP ON DISCONNECT ---
   socket.on("disconnect", () => {
-    // Live viewers count cleanup
+    // Live viewers cleanup
     Object.keys(liveRooms).forEach(astroId => {
       if (liveRooms[astroId].has(socket.id)) {
         liveRooms[astroId].delete(socket.id);
@@ -164,14 +173,14 @@ io.on("connection", (socket) => {
       }
     });
 
-    // Remove from userSocketMap
+    // Mapping cleanup
     for (const [uid, sid] of Object.entries(userSocketMap)) {
       if (sid === socket.id) {
         delete userSocketMap[uid];
         break;
       }
     }
-    console.log("User Disconnected:", socket.id);
+    console.log("Disconnected:", socket.id);
   });
 });
 
