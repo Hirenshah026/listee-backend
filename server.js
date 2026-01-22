@@ -141,7 +141,9 @@ io.on("connection", (socket) => {
     const id = data.roomId || data.astroId;
     if (!id) return;
     // Room name handling with prefix safety
-    const targetRoom = id.startsWith("live_room_") ? id : `live_room_${id}`;
+    const targetRoom = id.toString().startsWith("live_room_") 
+                     ? id 
+                     : `live_room_${id}`;
     io.to(targetRoom).emit("receive-message", data);
   });
 
