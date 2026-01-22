@@ -119,19 +119,15 @@ io.on("connection", (socket) => {
   socket.on("join-live-room", ({ astroId, role }) => {
   if (!astroId) return;
   const roomName = `live_room_${astroId}`;
-  
   socket.join(roomName);
-  console.log(`User ${socket.id} joined room: ${roomName} as ${role}`);
-
-  // 1. liveRooms state update logic
-  if (!liveRooms[astroId]) {
-    liveRooms[astroId] = new Set();
-  }
   
-  // Har koi jo join karega wo set mein jayega (Viewer count ke liye)
+  console.log(`User ${socket.id} joined as ${role} in ${roomName}`);
+
+  // Har join karne wale ko (Host ho ya Viewer) Set mein add karein
+  if (!liveRooms[astroId]) liveRooms[astroId] = new Set();
   liveRooms[astroId].add(socket.id);
 
-  // 2. Astro ko notify karna (Sirf agar viewer join kare)
+  // Agar viewer join kare, toh Astro ko notify karein
   if (role === "viewer") {
     const astroSocketId = userSocketMap[astroId];
     if (astroSocketId) {
@@ -139,25 +135,17 @@ io.on("connection", (socket) => {
     }
   }
 
-  // 3. Sabko (room members) update bhejna
+  // Count sabko bhejein (Host aur Viewers dono ko)
   const currentCount = liveRooms[astroId].size;
   io.to(roomName).emit("update-viewers", currentCount);
 });
 
   socket.on("send-message", (data) => {
-  console.log("Message received on server:", data); // Isse Render logs mein check kar paoge
-  
   const id = data.roomId || data.astroId;
   if (!id) return;
-
-  // Simple logic: Agar prefix nahi hai toh add karo
-  const targetRoom = id.toString().includes("live_room_") 
-                     ? id.toString() 
-                     : `live_room_${id}`;
-
-  console.log(`Broadcasting to: ${targetRoom}`);
+  const targetRoom = id.toString().startsWith("live_room_") ? id : `live_room_${id}`;
   
-  // io.to use karna hai (socket.to nahi)
+  // io.to pure room mein broadcast karega
   io.to(targetRoom).emit("receive-message", data);
 });
 
