@@ -117,25 +117,32 @@ io.on("connection", (socket) => {
 
   // --- 5. LIVE STREAMING LOGIC (NAYA & ROBUST) ---
   socket.on("join-live-room", ({ astroId, role }) => {
-    if (!astroId) return;
-    const roomName = `live_room_${astroId}`;
-    socket.join(roomName);
-    
-    console.log(`Live Room Join: ${socket.id} as ${role} in ${roomName}`);
+  if (!astroId) return;
+  const roomName = `live_room_${astroId}`;
+  
+  socket.join(roomName);
+  console.log(`User ${socket.id} joined room: ${roomName} as ${role}`);
 
-    if (role === "viewer") {
-      if (!liveRooms[astroId]) liveRooms[astroId] = new Set();
-      liveRooms[astroId].add(socket.id);
-      
-      const astroSocketId = userSocketMap[astroId];
-      if (astroSocketId) {
-        io.to(astroSocketId).emit("new-viewer", { viewerId: socket.id });
-      }
+  // 1. liveRooms state update logic
+  if (!liveRooms[astroId]) {
+    liveRooms[astroId] = new Set();
+  }
+  
+  // Har koi jo join karega wo set mein jayega (Viewer count ke liye)
+  liveRooms[astroId].add(socket.id);
+
+  // 2. Astro ko notify karna (Sirf agar viewer join kare)
+  if (role === "viewer") {
+    const astroSocketId = userSocketMap[astroId];
+    if (astroSocketId) {
+      io.to(astroSocketId).emit("new-viewer", { viewerId: socket.id });
     }
+  }
 
-    const currentCount = liveRooms[astroId] ? liveRooms[astroId].size : 0;
-    io.to(roomName).emit("update-viewers", currentCount);
-  });
+  // 3. Sabko (room members) update bhejna
+  const currentCount = liveRooms[astroId].size;
+  io.to(roomName).emit("update-viewers", currentCount);
+});
 
   socket.on("send-message", (data) => {
   console.log("Message received on server:", data); // Isse Render logs mein check kar paoge
