@@ -138,14 +138,21 @@ io.on("connection", (socket) => {
   });
 
   socket.on("send-message", (data) => {
-    const id = data.roomId || data.astroId;
-    if (!id) return;
-    // Room name handling with prefix safety
-    const targetRoom = id.toString().startsWith("live_room_") 
-                     ? id 
+  console.log("Message received on server:", data); // Isse Render logs mein check kar paoge
+  
+  const id = data.roomId || data.astroId;
+  if (!id) return;
+
+  // Simple logic: Agar prefix nahi hai toh add karo
+  const targetRoom = id.toString().includes("live_room_") 
+                     ? id.toString() 
                      : `live_room_${id}`;
-    io.to(targetRoom).emit("receive-message", data);
-  });
+
+  console.log(`Broadcasting to: ${targetRoom}`);
+  
+  // io.to use karna hai (socket.to nahi)
+  io.to(targetRoom).emit("receive-message", data);
+});
 
   socket.on("end-stream", ({ astroId }) => {
     const roomName = `live_room_${astroId}`;
