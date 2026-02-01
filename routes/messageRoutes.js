@@ -158,28 +158,36 @@ async function getAstroChatUsers(req, res) {
 }
 async function getAstroByChatUsers(req, res) {
   try {
-    const { astroId } = req.params;
-    
-    // 1. Astro se related saare messages nikaalein
+    const { id } = req.params; // Ye Astro ID bhi ho sakti hai ya User ID bhi
+
+    // 1. Saare messages nikaalein jahan ye ID involved hai
     const messages = await Message.find({
-      $or: [{ senderId: astroId }, { receiverId: astroId }],
+      $or: [{ senderId: id }, { receiverId: id }],
     }).select("senderId receiverId");
 
-    const userIds = new Set();
+    const participantsIds = new Set();
     messages.forEach((msg) => {
-      if (msg.senderId.toString() !== astroId) userIds.add(msg.senderId.toString());
-      if (msg.receiverId.toString() !== astroId) userIds.add(msg.receiverId.toString());
+      if (msg.senderId.toString() !== id) participantsIds.add(msg.senderId.toString());
+      if (msg.receiverId.toString() !== id) participantsIds.add(msg.receiverId.toString());
     });
 
-    // 2. FIXED: Yahan "mobile" field ko bhi select mein add kiya hai
-    // Agar aapke Model mein field ka naam "phone" hai, toh "name image phone" likhein
-    const users = await Astrologer.find({
-      _id: { $in: [...userIds] },
-    }).select("name image mobile"); 
+    const idsArray = [...participantsIds];
 
-    return res.status(200).json({ users });
+    // 2. Pehle "User" model mein check karein (Agar Astro login hai toh usey Users milenge)
+    let chatParticipants = await User.find({
+      _id: { $in: idsArray },
+    }).select("name image mobile dob tob pob");
+
+    // 3. Agar Users nahi mile, toh "Astrologer" model mein check karein (Agar User login hai toh usey Astros milenge)
+    if (chatParticipants.length === 0) {
+      chatParticipants = await Astrologer.find({
+        _id: { $in: idsArray },
+      }).select("name image mobile specialty rating");
+    }
+
+    return res.status(200).json({ users: chatParticipants });
   } catch (error) {
-    console.error("getAstroChatUsers error:", error);
+    console.error("getChatHistoryUsers error:", error);
     return res.status(500).json({ message: "Server error" });
   }
 }
