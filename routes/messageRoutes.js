@@ -158,36 +158,32 @@ async function getAstroChatUsers(req, res) {
 }
 async function getAstroByChatUsers(req, res) {
   try {
-    const { id } = req.params; // Ye Astro ID bhi ho sakti hai ya User ID bhi
-
-    // 1. Saare messages nikaalein jahan ye ID involved hai
+    const { astroId } = req.params; // Isme User ID bhi ho sakti hai
+    
+    // 1. Saare messages nikaalo jahan ye ID involved hai
     const messages = await Message.find({
-      $or: [{ senderId: id }, { receiverId: id }],
+      $or: [{ senderId: astroId }, { receiverId: astroId }],
     }).select("senderId receiverId");
 
-    const participantsIds = new Set();
-    messages.forEach((msg) => {
-      if (msg.senderId.toString() !== id) participantsIds.add(msg.senderId.toString());
-      if (msg.receiverId.toString() !== id) participantsIds.add(msg.receiverId.toString());
-    });
+    const participantsIds = [...new Set(messages.map(msg => 
+      msg.senderId.toString() === astroId ? msg.receiverId.toString() : msg.senderId.toString()
+    ))];
 
-    const idsArray = [...participantsIds];
+    // 2. Pehle check karo ki kya ye participants 'User' model mein hain?
+    let participants = await User.find({
+      _id: { $in: participantsIds },
+    }).select("name image mobile dob tob pob gender");
 
-    // 2. Pehle "User" model mein check karein (Agar Astro login hai toh usey Users milenge)
-    let chatParticipants = await User.find({
-      _id: { $in: idsArray },
-    }).select("name image mobile dob tob pob");
-
-    // 3. Agar Users nahi mile, toh "Astrologer" model mein check karein (Agar User login hai toh usey Astros milenge)
-    if (chatParticipants.length === 0) {
-      chatParticipants = await Astrologer.find({
-        _id: { $in: idsArray },
+    // 3. Agar 'User' model mein nahi mile, toh iska matlab samne wala 'Astrologer' hai
+    if (participants.length === 0) {
+      participants = await Astrologer.find({
+        _id: { $in: participantsIds },
       }).select("name image mobile specialty rating");
     }
 
-    return res.status(200).json({ users: chatParticipants });
+    return res.status(200).json({ users: participants });
   } catch (error) {
-    console.error("getChatHistoryUsers error:", error);
+    console.error("getAstroByChatUsers error:", error);
     return res.status(500).json({ message: "Server error" });
   }
 }
