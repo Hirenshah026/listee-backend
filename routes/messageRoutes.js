@@ -158,32 +158,31 @@ async function getAstroChatUsers(req, res) {
 }
 async function getAstroByChatUsers(req, res) {
   try {
-    const { astroId } = req.params; // Isme User ID bhi ho sakti hai
+    const { astroId } = req.params; // Ye logged-in person (Aap) ki ID hai
     
-    // 1. Saare messages nikaalo jahan ye ID involved hai
+    // 1. Messages dhoondo jahan aap involved ho
     const messages = await Message.find({
       $or: [{ senderId: astroId }, { receiverId: astroId }],
     }).select("senderId receiverId");
 
-    const participantsIds = [...new Set(messages.map(msg => 
+    // 2. Samne wale ki IDs nikalo
+    const participantIds = [...new Set(messages.map(msg => 
       msg.senderId.toString() === astroId ? msg.receiverId.toString() : msg.senderId.toString()
     ))];
 
-    // 2. Pehle check karo ki kya ye participants 'User' model mein hain?
-    let participants = await User.find({
-      _id: { $in: participantsIds },
-    }).select("name image mobile dob tob pob gender");
+    // 3. Pehle 'Astrologer' model mein dhoondo (Kyunki aap User ho)
+    let participants = await Astrologer.find({ _id: { $in: participantIds } })
+                                       .select("name image mobile specialty rating");
 
-    // 3. Agar 'User' model mein nahi mile, toh iska matlab samne wala 'Astrologer' hai
+    // 4. Agar Astrologer nahi mila, tab 'User' model mein dhoondo (Astro login ke liye)
     if (participants.length === 0) {
-      participants = await Astrologer.find({
-        _id: { $in: participantsIds },
-      }).select("name image mobile specialty rating");
+      participants = await User.find({ _id: { $in: participantIds } })
+                               .select("name image mobile");
     }
 
     return res.status(200).json({ users: participants });
   } catch (error) {
-    console.error("getAstroByChatUsers error:", error);
+    console.error("Error:", error);
     return res.status(500).json({ message: "Server error" });
   }
 }
