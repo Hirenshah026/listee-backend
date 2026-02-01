@@ -157,40 +157,41 @@ async function getAstroChatUsers(req, res) {
   }
 }
 // messageController.js
+// messageController.js
 async function getAstroByChatUsers(req, res) {
   try {
-    const { astroId } = req.params; // Aapki Logged-in ID (Customer)
+    const { astroId } = req.params; // Aapki ID: 696b9b156be5e97e46b1d2ef
 
-    // 1. Messages fetch karo jahan aap shamil ho
+    // 1. Saare messages fetch karein jahan aap (User) shamil hain
     const messages = await Message.find({
       $or: [{ senderId: astroId }, { receiverId: astroId }],
     }).lean();
 
-    if (!messages.length) return res.status(200).json({ success: true, users: [] });
+    if (!messages.length) {
+      return res.status(200).json({ success: true, users: [] });
+    }
 
-    // 2. Samne wale ki saari unique IDs nikalo
+    // 2. Un sabki IDs nikaalein jinse aapne baat ki hai
     const participantIds = [...new Set(messages.map(msg => 
       msg.senderId.toString() === astroId ? msg.receiverId.toString() : msg.senderId.toString()
     ))];
 
-    // 3. Parallel mein dono collections check karo (User aur Astrologer)
-    const [astros, users] = await Promise.all([
-      Astrologer.find({ _id: { $in: participantIds } }).select("name image specialty rating mobile").lean(),
-      User.find({ _id: { $in: participantIds } }).select("name image mobile").lean()
-    ]);
-
-    // 4. Dono results ko merge kar do
-    // Taki agar Rajesh Kumar "User" model mein bhi hai, toh wo list mein aa jaye
-    const finalList = [...astros, ...users];
+    // 3. STRICT FILTER: Sirf wahi IDs nikaalein jo 'Astrologer' collection mein hain
+    // Agar Rajesh Kumar yahan nahi hai, toh wo automatically bahar ho jayega
+    const astrosOnly = await Astrologer.find({ 
+      _id: { $in: participantIds } 
+    }).select("name image specialty rating mobile").lean();
 
     return res.status(200).json({ 
       success: true, 
-      count: finalList.length, 
-      users: finalList 
+      count: astrosOnly.length, 
+      users: astrosOnly // Sirf Astrologers ka data jayega
     });
+
   } catch (error) {
-    console.error("Error:", error);
+    console.error("Backend Filter Error:", error);
     return res.status(500).json({ message: "Server error" });
   }
 }
 export default router;
+
