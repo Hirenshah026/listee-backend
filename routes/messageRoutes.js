@@ -156,31 +156,38 @@ async function getAstroChatUsers(req, res) {
     return res.status(500).json({ message: "Server error" });
   }
 }
+// messageController.js
 async function getAstroByChatUsers(req, res) {
   try {
-    const { astroId } = req.params; // Ye logged-in person (Aap) ki ID hai
-    
-    // 1. Messages dhoondo jahan aap involved ho
+    const { astroId } = req.params; // Aapki Logged-in ID (Customer)
+
+    // 1. Messages fetch karo jahan aap shamil ho
     const messages = await Message.find({
       $or: [{ senderId: astroId }, { receiverId: astroId }],
-    }).select("senderId receiverId");
+    }).lean();
 
-    // 2. Samne wale ki IDs nikalo
+    if (!messages.length) return res.status(200).json({ success: true, users: [] });
+
+    // 2. Samne wale ki saari unique IDs nikalo
     const participantIds = [...new Set(messages.map(msg => 
       msg.senderId.toString() === astroId ? msg.receiverId.toString() : msg.senderId.toString()
     ))];
 
-    // 3. Pehle 'Astrologer' model mein dhoondo (Kyunki aap User ho)
-    let participants = await Astrologer.find({ _id: { $in: participantIds } })
-                                       .select("name image mobile specialty rating");
+    // 3. Parallel mein dono collections check karo (User aur Astrologer)
+    const [astros, users] = await Promise.all([
+      Astrologer.find({ _id: { $in: participantIds } }).select("name image specialty rating mobile").lean(),
+      User.find({ _id: { $in: participantIds } }).select("name image mobile").lean()
+    ]);
 
-    // 4. Agar Astrologer nahi mila, tab 'User' model mein dhoondo (Astro login ke liye)
-    if (participants.length === 0) {
-      participants = await User.find({ _id: { $in: participantIds } })
-                               .select("name image mobile");
-    }
+    // 4. Dono results ko merge kar do
+    // Taki agar Rajesh Kumar "User" model mein bhi hai, toh wo list mein aa jaye
+    const finalList = [...astros, ...users];
 
-    return res.status(200).json({ users: participants });
+    return res.status(200).json({ 
+      success: true, 
+      count: finalList.length, 
+      users: finalList 
+    });
   } catch (error) {
     console.error("Error:", error);
     return res.status(500).json({ message: "Server error" });
