@@ -1,6 +1,7 @@
 import express from "express";
 import Message from "../models/Message.js";
 import User from "../models/ChatUser.js";
+import Astrologer from "../models/Astrologer.js";
 import multer from "multer"; // Multer ko sirf aise import karein
 
 const router = express.Router();
@@ -18,6 +19,7 @@ const upload = multer({ storage });
 
 /* ================= USERS LIST FOR ASTRO ================= */
 router.get("/users/:astroId", getAstroChatUsers);
+router.get("/usersby/:astroId", getAstroByChatUsers);
 
 /* ================= LAST MESSAGE ================= */
 router.get("/last/:senderId/:receiverId", async (req, res) => {
@@ -110,7 +112,7 @@ router.post("/", upload.single("image"), async (req, res) => {
 
   try {
     // Check karo agar file aayi hai toh path banao
-    const filePath = req.file ? `https://listee-backend.onrender.com/uploads_mess/${req.file.filename}` : null;
+    const filePath = req.file ? `http://10.93.65.180:5000/uploads_mess/${req.file.filename}` : null;
 
     const message = await Message.create({
       text: text || "",
@@ -154,5 +156,31 @@ async function getAstroChatUsers(req, res) {
     return res.status(500).json({ message: "Server error" });
   }
 }
+async function getAstroByChatUsers(req, res) {
+  try {
+    const { astroId } = req.params;
+    
+    // 1. Astro se related saare messages nikaalein
+    const messages = await Message.find({
+      $or: [{ senderId: astroId }, { receiverId: astroId }],
+    }).select("senderId receiverId");
 
+    const userIds = new Set();
+    messages.forEach((msg) => {
+      if (msg.senderId.toString() !== astroId) userIds.add(msg.senderId.toString());
+      if (msg.receiverId.toString() !== astroId) userIds.add(msg.receiverId.toString());
+    });
+
+    // 2. FIXED: Yahan "mobile" field ko bhi select mein add kiya hai
+    // Agar aapke Model mein field ka naam "phone" hai, toh "name image phone" likhein
+    const users = await Astrologer.find({
+      _id: { $in: [...userIds] },
+    }).select("name image mobile"); 
+
+    return res.status(200).json({ users });
+  } catch (error) {
+    console.error("getAstroChatUsers error:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+}
 export default router;
