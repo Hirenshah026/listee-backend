@@ -19,7 +19,7 @@ const upload = multer({ storage });
 
 /* ================= USERS LIST FOR ASTRO ================= */
 router.get("/users/:astroId", getAstroChatUsers);
-router.get("/usersby/:astroId", getAstroByChatUsers);
+router.get("/usersby/find/:astroId", getAstroByChatUsers);
 
 /* ================= LAST MESSAGE ================= */
 router.get("/last/:senderId/:receiverId", async (req, res) => {
