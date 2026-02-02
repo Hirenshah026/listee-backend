@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import express from "express";
 import Message from "../models/Message.js";
 import User from "../models/ChatUser.js";
@@ -158,9 +159,9 @@ async function getAstroChatUsers(req, res) {
 }
 async function getAstroByChatUsers(req, res) {
   try {
-    const { astroId } = req.params; // String ID: "696b9b156be5e97e46b1d2ef"
+    const { astroId } = req.params;
 
-    // 1. Messages dhoondo (Mongoose automatic string ID match karega)
+    // 1. Messages nikaalein
     const messages = await Message.find({
       $or: [{ senderId: astroId }, { receiverId: astroId }],
     }).sort({ createdAt: -1 }).lean();
@@ -169,60 +170,43 @@ async function getAstroByChatUsers(req, res) {
       return res.status(200).json({ success: true, users: [] });
     }
 
-    // 2. Unique Participant IDs nikalo (Strings mein)
+    // 2. Unique IDs nikaalein aur unhe Mongoose ObjectIds mein convert karein
     const participantIds = [...new Set(messages.map(msg => 
       msg.senderId.toString() === astroId ? msg.receiverId.toString() : msg.senderId.toString()
     ))];
 
-    // 3. Dono collections mein dhoondo (Bina manual ObjectId conversion ke)
-    const [astros, users] = await Promise.all([
-      Astrologer.find({ _id: { $in: participantIds } }).select("name image specialty mobile").lean(),
-      User.find({ _id: { $in: participantIds } }).select("name image mobile").lean()
-    ]);
+    // Sabse bada fix yahan hai:
+    const objectIds = participantIds.map(id => new mongoose.Types.ObjectId(id));
 
-    // 4. Merge Karo
-    const combinedMap = new Map();
-    users.forEach(u => combinedMap.set(u._id.toString(), { ...u, role: 'user' }));
-    astros.forEach(a => combinedMap.set(a._id.toString(), { ...a, role: 'astrologer' }));
+    // 3. Ab Astrologer table mein dhoondo (Ab ye Rajesh Kumar ko dhoond lega)
+    const astros = await Astrologer.find({ 
+      _id: { $in: objectIds } 
+    }).select("name image specialty mobile").lean();
 
-    const mergedList = Array.from(combinedMap.values());
-
-    // 5. Enrichment: Last Message & Unread Count
-    const finalUsers = await Promise.all(mergedList.map(async (p) => {
-      const pId = p._id.toString();
+    // 4. Last message mapping
+    const finalData = await Promise.all(astros.map(async (astro) => {
+      const aId = astro._id.toString();
       
       const lastMsg = await Message.findOne({
         $or: [
-          { senderId: astroId, receiverId: pId },
-          { senderId: pId, receiverId: astroId }
+          { senderId: astroId, receiverId: aId },
+          { senderId: aId, receiverId: astroId }
         ]
       }).sort({ createdAt: -1 }).lean();
 
-      const unread = await Message.countDocuments({
-        senderId: pId,
-        receiverId: astroId,
-        read: false
-      });
-
       return {
-        ...p,
+        ...astro,
         lastMessage: lastMsg ? (lastMsg.text || "📷 Photo") : "",
         lastMessageTime: lastMsg ? lastMsg.createdAt : "0",
-        unreadCount: unread
       };
     }));
 
-    // Sorting
-    finalUsers.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
+    finalData.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
 
-    return res.status(200).json({ 
-      success: true, 
-      count: finalUsers.length, 
-      users: finalUsers 
-    });
+    return res.status(200).json({ success: true, users: finalData });
 
   } catch (error) {
-    console.error("API Error:", error);
+    console.error("Astro Error:", error);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 }
