@@ -15,7 +15,7 @@ const storage = multer.diskStorage({
   },
 });
 const upload = multer({ storage });
-
+router.get("/test-me", (req, res) => res.send("Router is working fine!"));
 /* ================= CONTROLLER FUNCTIONS (Upar Define Karein) ================= */
 
 // 1. Astrologer List nikalne ke liye (User side se Rajesh Kumar dikhega)
@@ -170,3 +170,4 @@ router.get("/:user1/:user2", async (req, res) => {
 });
 
 export default router;
+
