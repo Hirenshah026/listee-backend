@@ -158,62 +158,72 @@ async function getAstroChatUsers(req, res) {
 }
 async function getAstroByChatUsers(req, res) {
   try {
-    const { astroId } = req.params; // Ye logged-in person ki ID hai (Chahe Astro ho ya User)
-    
-    // 1. Saare related messages nikaalein
+    const { astroId } = req.params; // String ID: "696b9b156be5e97e46b1d2ef"
+
+    // 1. Messages dhoondo (Mongoose automatic string ID match karega)
     const messages = await Message.find({
       $or: [{ senderId: astroId }, { receiverId: astroId }],
-    }).select("senderId receiverId");
+    }).sort({ createdAt: -1 }).lean();
 
-    const participantIds = new Set();
-    messages.forEach((msg) => {
-      if (msg.senderId.toString() !== astroId) participantIds.add(msg.senderId.toString());
-      if (msg.receiverId.toString() !== astroId) participantIds.add(msg.receiverId.toString());
-    });
+    if (!messages || messages.length === 0) {
+      return res.status(200).json({ success: true, users: [] });
+    }
 
-    const idsArray = [...participantIds];
+    // 2. Unique Participant IDs nikalo (Strings mein)
+    const participantIds = [...new Set(messages.map(msg => 
+      msg.senderId.toString() === astroId ? msg.receiverId.toString() : msg.senderId.toString()
+    ))];
 
-    // 2. Parallel mein dono collections check karein
-    // Hum ObjectIds ka array bhej rahe hain taaki MongoDB confuse na ho
+    // 3. Dono collections mein dhoondo (Bina manual ObjectId conversion ke)
     const [astros, users] = await Promise.all([
-      Astrologer.find({ _id: { $in: idsArray } }).select("name image specialty mobile").lean(),
-      User.find({ _id: { $in: idsArray } }).select("name image mobile").lean()
+      Astrologer.find({ _id: { $in: participantIds } }).select("name image specialty mobile").lean(),
+      User.find({ _id: { $in: participantIds } }).select("name image mobile").lean()
     ]);
 
-    // 3. Sabko ek hi list mein merge kar dein
-    // 'type' field se frontend ko pata chalega ki samne wala kaun hai
-    const formattedAstros = astros.map(a => ({ ...a, type: 'astrologer' }));
-    const formattedUsers = users.map(u => ({ ...u, type: 'user' }));
+    // 4. Merge Karo
+    const combinedMap = new Map();
+    users.forEach(u => combinedMap.set(u._id.toString(), { ...u, role: 'user' }));
+    astros.forEach(a => combinedMap.set(a._id.toString(), { ...a, role: 'astrologer' }));
 
-    const finalList = [...formattedAstros, ...formattedUsers];
+    const mergedList = Array.from(combinedMap.values());
 
-    // 4. Dubara last message aur sorting wala part (Optional but recommended)
-    const enrichedList = await Promise.all(finalList.map(async (item) => {
-      const last = await Message.findOne({
+    // 5. Enrichment: Last Message & Unread Count
+    const finalUsers = await Promise.all(mergedList.map(async (p) => {
+      const pId = p._id.toString();
+      
+      const lastMsg = await Message.findOne({
         $or: [
-          { senderId: astroId, receiverId: item._id },
-          { senderId: item._id, receiverId: astroId }
+          { senderId: astroId, receiverId: pId },
+          { senderId: pId, receiverId: astroId }
         ]
       }).sort({ createdAt: -1 }).lean();
 
+      const unread = await Message.countDocuments({
+        senderId: pId,
+        receiverId: astroId,
+        read: false
+      });
+
       return {
-        ...item,
-        lastMessage: last ? (last.text || "📷 Photo") : "",
-        lastMessageTime: last ? last.createdAt : "0"
+        ...p,
+        lastMessage: lastMsg ? (lastMsg.text || "📷 Photo") : "",
+        lastMessageTime: lastMsg ? lastMsg.createdAt : "0",
+        unreadCount: unread
       };
     }));
 
-    // Sorting: Latest chat upar
-    enrichedList.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
+    // Sorting
+    finalUsers.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
 
     return res.status(200).json({ 
       success: true, 
-      users: enrichedList // Frontend ko 'users' key hi bhej rahe hain taaki code na badalna pade
+      count: finalUsers.length, 
+      users: finalUsers 
     });
 
   } catch (error) {
-    console.error("Error in getAstroByChatUsers:", error);
-    return res.status(500).json({ message: "Server error" });
+    console.error("API Error:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 }
 export default router;
