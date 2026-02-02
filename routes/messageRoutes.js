@@ -20,6 +20,59 @@ const upload = multer({ storage });
 
 /* ================= USERS LIST FOR ASTRO ================= */
 router.get("/users/:astroId", getAstroChatUsers);
+async function getAstroByChatUsers(req, res) {
+  try {
+    const { astroId } = req.params;
+
+    // 1. Messages nikaalein
+    const messages = await Message.find({
+      $or: [{ senderId: astroId }, { receiverId: astroId }],
+    }).sort({ createdAt: -1 }).lean();
+
+    if (!messages || messages.length === 0) {
+      return res.status(200).json({ success: true, users: [] });
+    }
+
+    // 2. Unique IDs nikaalein aur unhe Mongoose ObjectIds mein convert karein
+    const participantIds = [...new Set(messages.map(msg => 
+      msg.senderId.toString() === astroId ? msg.receiverId.toString() : msg.senderId.toString()
+    ))];
+
+    // Sabse bada fix yahan hai:
+    const objectIds = participantIds.map(id => new mongoose.Types.ObjectId(id));
+
+    // 3. Ab Astrologer table mein dhoondo (Ab ye Rajesh Kumar ko dhoond lega)
+    const astros = await Astrologer.find({ 
+      _id: { $in: objectIds } 
+    }).select("name image specialty mobile").lean();
+
+    // 4. Last message mapping
+    const finalData = await Promise.all(astros.map(async (astro) => {
+      const aId = astro._id.toString();
+      
+      const lastMsg = await Message.findOne({
+        $or: [
+          { senderId: astroId, receiverId: aId },
+          { senderId: aId, receiverId: astroId }
+        ]
+      }).sort({ createdAt: -1 }).lean();
+
+      return {
+        ...astro,
+        lastMessage: lastMsg ? (lastMsg.text || "📷 Photo") : "",
+        lastMessageTime: lastMsg ? lastMsg.createdAt : "0",
+      };
+    }));
+
+    finalData.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
+
+    return res.status(200).json({ success: true, users: finalData });
+
+  } catch (error) {
+    console.error("Astro Error:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+}
 router.get("/usersby/find/:astroId", getAstroByChatUsers);
 
 /* ================= LAST MESSAGE ================= */
@@ -157,57 +210,5 @@ async function getAstroChatUsers(req, res) {
     return res.status(500).json({ message: "Server error" });
   }
 }
-async function getAstroByChatUsers(req, res) {
-  try {
-    const { astroId } = req.params;
 
-    // 1. Messages nikaalein
-    const messages = await Message.find({
-      $or: [{ senderId: astroId }, { receiverId: astroId }],
-    }).sort({ createdAt: -1 }).lean();
-
-    if (!messages || messages.length === 0) {
-      return res.status(200).json({ success: true, users: [] });
-    }
-
-    // 2. Unique IDs nikaalein aur unhe Mongoose ObjectIds mein convert karein
-    const participantIds = [...new Set(messages.map(msg => 
-      msg.senderId.toString() === astroId ? msg.receiverId.toString() : msg.senderId.toString()
-    ))];
-
-    // Sabse bada fix yahan hai:
-    const objectIds = participantIds.map(id => new mongoose.Types.ObjectId(id));
-
-    // 3. Ab Astrologer table mein dhoondo (Ab ye Rajesh Kumar ko dhoond lega)
-    const astros = await Astrologer.find({ 
-      _id: { $in: objectIds } 
-    }).select("name image specialty mobile").lean();
-
-    // 4. Last message mapping
-    const finalData = await Promise.all(astros.map(async (astro) => {
-      const aId = astro._id.toString();
-      
-      const lastMsg = await Message.findOne({
-        $or: [
-          { senderId: astroId, receiverId: aId },
-          { senderId: aId, receiverId: astroId }
-        ]
-      }).sort({ createdAt: -1 }).lean();
-
-      return {
-        ...astro,
-        lastMessage: lastMsg ? (lastMsg.text || "📷 Photo") : "",
-        lastMessageTime: lastMsg ? lastMsg.createdAt : "0",
-      };
-    }));
-
-    finalData.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
-
-    return res.status(200).json({ success: true, users: finalData });
-
-  } catch (error) {
-    console.error("Astro Error:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
-  }
-}
 export default router;
