@@ -156,42 +156,64 @@ async function getAstroChatUsers(req, res) {
     return res.status(500).json({ message: "Server error" });
   }
 }
-// messageController.js
-// messageController.js
 async function getAstroByChatUsers(req, res) {
   try {
-    const { astroId } = req.params; // Aapki ID: 696b9b156be5e97e46b1d2ef
-
-    // 1. Saare messages fetch karein jahan aap (User) shamil hain
+    const { astroId } = req.params; // Ye logged-in person ki ID hai (Chahe Astro ho ya User)
+    
+    // 1. Saare related messages nikaalein
     const messages = await Message.find({
       $or: [{ senderId: astroId }, { receiverId: astroId }],
-    }).lean();
+    }).select("senderId receiverId");
 
-    if (!messages.length) {
-      return res.status(200).json({ success: true, users: [] });
-    }
+    const participantIds = new Set();
+    messages.forEach((msg) => {
+      if (msg.senderId.toString() !== astroId) participantIds.add(msg.senderId.toString());
+      if (msg.receiverId.toString() !== astroId) participantIds.add(msg.receiverId.toString());
+    });
 
-    // 2. Un sabki IDs nikaalein jinse aapne baat ki hai
-    const participantIds = [...new Set(messages.map(msg => 
-      msg.senderId.toString() === astroId ? msg.receiverId.toString() : msg.senderId.toString()
-    ))];
+    const idsArray = [...participantIds];
 
-    // 3. STRICT FILTER: Sirf wahi IDs nikaalein jo 'Astrologer' collection mein hain
-    // Agar Rajesh Kumar yahan nahi hai, toh wo automatically bahar ho jayega
-    const astrosOnly = await Astrologer.find({ 
-      _id: { $in: participantIds } 
-    }).select("name image specialty rating mobile").lean();
+    // 2. Parallel mein dono collections check karein
+    // Hum ObjectIds ka array bhej rahe hain taaki MongoDB confuse na ho
+    const [astros, users] = await Promise.all([
+      Astrologer.find({ _id: { $in: idsArray } }).select("name image specialty mobile").lean(),
+      User.find({ _id: { $in: idsArray } }).select("name image mobile").lean()
+    ]);
+
+    // 3. Sabko ek hi list mein merge kar dein
+    // 'type' field se frontend ko pata chalega ki samne wala kaun hai
+    const formattedAstros = astros.map(a => ({ ...a, type: 'astrologer' }));
+    const formattedUsers = users.map(u => ({ ...u, type: 'user' }));
+
+    const finalList = [...formattedAstros, ...formattedUsers];
+
+    // 4. Dubara last message aur sorting wala part (Optional but recommended)
+    const enrichedList = await Promise.all(finalList.map(async (item) => {
+      const last = await Message.findOne({
+        $or: [
+          { senderId: astroId, receiverId: item._id },
+          { senderId: item._id, receiverId: astroId }
+        ]
+      }).sort({ createdAt: -1 }).lean();
+
+      return {
+        ...item,
+        lastMessage: last ? (last.text || "📷 Photo") : "",
+        lastMessageTime: last ? last.createdAt : "0"
+      };
+    }));
+
+    // Sorting: Latest chat upar
+    enrichedList.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
 
     return res.status(200).json({ 
       success: true, 
-      count: astrosOnly.length, 
-      users: astrosOnly // Sirf Astrologers ka data jayega
+      users: enrichedList // Frontend ko 'users' key hi bhej rahe hain taaki code na badalna pade
     });
 
   } catch (error) {
-    console.error("Backend Filter Error:", error);
+    console.error("Error in getAstroByChatUsers:", error);
     return res.status(500).json({ message: "Server error" });
   }
 }
 export default router;
-
