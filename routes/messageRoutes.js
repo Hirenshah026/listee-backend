@@ -15,15 +15,17 @@ const storage = multer.diskStorage({
   },
 });
 const upload = multer({ storage });
-router.get("/test-me", (req, res) => res.send("Router is working fine!"));
+
 /* ================= CONTROLLER FUNCTIONS (Upar Define Karein) ================= */
 
 // 1. Astrologer List nikalne ke liye (User side se Rajesh Kumar dikhega)
+// backend/controllers/messageController.js
+
 async function getAstroByChatUsers(req, res) {
   try {
-    const { astroId } = req.params; // Ye login user ki ID hai
+    const { astroId } = req.params; // Login User ID
 
-    // Messages dhoondo
+    // 1. Pehle saare messages nikalen
     const messages = await Message.find({
       $or: [{ senderId: astroId }, { receiverId: astroId }],
     }).sort({ createdAt: -1 }).lean();
@@ -32,22 +34,22 @@ async function getAstroByChatUsers(req, res) {
       return res.status(200).json({ success: true, users: [] });
     }
 
-    // Saamne wale ki IDs nikalo
+    // 2. Unique Participant IDs nikalen
     const participantIds = [...new Set(messages.map(msg => 
       msg.senderId.toString() === astroId ? msg.receiverId.toString() : msg.senderId.toString()
     ))];
 
-    // String IDs ko ObjectId mein convert karo (Rajesh Kumar ko dhoondne ke liye)
     const objectIds = participantIds.map(id => new mongoose.Types.ObjectId(id));
 
-    // Astrologer table mein search karo
+    // 3. Astrologers ki details nikalen
     const astros = await Astrologer.find({ 
       _id: { $in: objectIds } 
     }).select("name image specialty mobile").lean();
 
-    // Last message aur Time attach karo
+    // 4. Har Astro ke liye Last Message aur Unread Count nikalen
     const finalData = await Promise.all(astros.map(async (astro) => {
       const aId = astro._id.toString();
+      
       const lastMsg = await Message.findOne({
         $or: [
           { senderId: astroId, receiverId: aId },
@@ -55,14 +57,22 @@ async function getAstroByChatUsers(req, res) {
         ]
       }).sort({ createdAt: -1 }).lean();
 
+      // Count only those messages sent by Astro to Me which are NOT read
+      const unreadCount = await Message.countDocuments({
+        senderId: aId,
+        receiverId: astroId,
+        read: false
+      });
+
       return {
         ...astro,
         lastMessage: lastMsg ? (lastMsg.text || "📷 Photo") : "",
         lastMessageTime: lastMsg ? lastMsg.createdAt : "0",
+        unreadCount: unreadCount // Yeh zaroori hai
       };
     }));
 
-    // Latest chat upar rakho
+    // Sorting by latest message
     finalData.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
 
     return res.status(200).json({ success: true, users: finalData });
@@ -170,4 +180,3 @@ router.get("/:user1/:user2", async (req, res) => {
 });
 
 export default router;
-
