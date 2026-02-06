@@ -38,6 +38,7 @@ const io = new Server(server, {
 const chatSessions = {};
 let userSocketMap = {}; 
 let liveRooms = {}; // { astroId: Set(viewerSocketIds) }
+let activeLiveAstros = {};
 
 io.on("connection", (socket) => {
   console.log("Socket Connected:", socket.id);
@@ -112,14 +113,26 @@ io.on("connection", (socket) => {
     if (receiverSocketId) io.to(receiverSocketId).emit("call-ended");
   });
 
+  socket.on("get-live-astros", () => {
+        socket.emit("live-astros-list", Object.values(activeLiveAstros));
+    });
+  
   // --- 5. LIVE STREAMING LOGIC (NAYA & ROBUST) ---
-  socket.on("join-live-room", ({ astroId, role }) => {
+  socket.on("join-live-room", ({ astroId, role,astroData }) => {
     if (!astroId) return;
     const roomName = `live_room_${astroId}`;
     socket.join(roomName);
     
     console.log(`Live Room Join: ${socket.id} as ${role} in ${roomName}`);
 
+    if (role === "host" && astroData) {
+            activeLiveAstros[astroId] = { 
+                ...astroData, 
+                _id: astroId, 
+                socketId: socket.id 
+            };
+            io.emit("live-astros-list", Object.values(activeLiveAstros));
+        }
     if (role === "viewer") {
       if (!liveRooms[astroId]) liveRooms[astroId] = new Set();
       liveRooms[astroId].add(socket.id);
@@ -143,10 +156,11 @@ io.on("connection", (socket) => {
   });
 
   socket.on("end-stream", ({ astroId }) => {
-    const roomName = `live_room_${astroId}`;
-    io.to(roomName).emit("stream-ended");
+    delete activeLiveAstros[astroId]; // List se hatao
     delete liveRooms[astroId];
-  });
+    io.emit("live-astros-list", Object.values(activeLiveAstros)); // Sabko update bhejo
+    io.to(`live_room_${astroId}`).emit("stream-ended");
+});
 
   // --- 6. WEBRTC SIGNALING FOR LIVE ---
   socket.on("send-offer-to-viewer", ({ to, offer }) => {
@@ -166,6 +180,15 @@ io.on("connection", (socket) => {
   // --- 7. CLEANUP ON DISCONNECT ---
   socket.on("disconnect", () => {
     // Live viewers cleanup
+    // Host agar bina button dabaye disconnect ho jaye toh list saaf karo
+  for (const [astroId, data] of Object.entries(activeLiveAstros)) {
+      if (data.socketId === socket.id) {
+          delete activeLiveAstros[astroId];
+          delete liveRooms[astroId];
+          io.emit("live-astros-list", Object.values(activeLiveAstros));
+          break;
+      }
+  }
     Object.keys(liveRooms).forEach(astroId => {
       if (liveRooms[astroId].has(socket.id)) {
         liveRooms[astroId].delete(socket.id);
