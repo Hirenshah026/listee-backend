@@ -110,18 +110,48 @@ router.get("/doctor-panel-profile", auth, async (req, res) => {
 
 router.put("/doctor-panel-update-profile", auth, async (req, res) => {
   try {
+    const role = req.headers.role; // Middleware se role pakda
     const { name, email, phone, address } = req.body;
+    
+    // Update karne ke liye data object
+    const updateFields = { name, email, phone, address };
+    const options = { new: true, runValidators: true };
 
-    const user = await User.findByIdAndUpdate(
-      req.user.id,
-      { name, email, phone, address },
-      { new: true }
-    ).select("-password");
+    let updatedProfile = null;
 
-    res.json({ success: true, user });
+    // Role ke basis par sahi Model choose karke update karna
+    if (role === "staff") {
+      updatedProfile = await Staff.findByIdAndUpdate(req.user.id, updateFields, options).select("-password");
+    } 
+    else if (role === "astro") {
+      updatedProfile = await Astrologer.findByIdAndUpdate(req.user.id, updateFields, options).select("-password");
+    } 
+    else if (role === "chatuser") {
+      updatedProfile = await ChatUser.findByIdAndUpdate(req.user.id, updateFields, options).select("-password");
+    } 
+    else {
+      updatedProfile = await User.findByIdAndUpdate(req.user.id, updateFields, options).select("-password");
+    }
+
+    if (!updatedProfile) {
+      return res.status(404).json({
+        success: false,
+        message: "Profile nahi mili",
+      });
+    }
+
+    res.json({ 
+      success: true, 
+      message: "Profile successfully update ho gayi",
+      user: updatedProfile 
+    });
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: "Server error" });
+    console.error("Update Error:", err);
+    res.status(500).json({ 
+      success: false, 
+      message: err.message || "Server error" 
+    });
   }
 });
 
