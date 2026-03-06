@@ -36,4 +36,4 @@ const astrologerSchema = new mongoose.Schema(
 );
 
 export default  mongoose.model("Astrologer", astrologerSchema);
-;
+
