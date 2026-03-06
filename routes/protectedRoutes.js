@@ -19,7 +19,7 @@ import {
   deleteRole,
   toggleActive,
 } from "../controllers/roleController.js";
-import { toggleActiveDoc,updateDoctor } from "../controllers/authController.js";
+import { toggleActiveDoc, updateDoctor } from "../controllers/authController.js";
 import {
   createStaff,
   getStaff,
@@ -47,9 +47,9 @@ import {
   getQuestions,
   createQuestion,
   updateQuestion,
-  deleteQuestion,getNextQuestion,
+  deleteQuestion, getNextQuestion,
 } from "../controllers/questionController.js";
-
+import { createMantra, updateMantra, deleteMantra, getMantrasByAstro,getMantraById,getAllMantras } from '../controllers/mantraController.js';
 
 const router = express.Router();
 
@@ -74,13 +74,13 @@ router.get("/doctor-panel-profile", auth, async (req, res) => {
 
     if (role == "staff") {
       profile = await Staff.findById(req.user.id).select("-password");
-    } 
+    }
     else if (role == "astro") {
       profile = await Astrologer.findById(req.user.id).select("-password");
-    } 
+    }
     else if (role == "chatuser") {
       profile = await ChatUser.findById(req.user.id).select("-password");
-    } 
+    }
     else {
       profile = await User.findById(req.user.id).select("-password");
     }
@@ -112,7 +112,7 @@ router.put("/doctor-panel-update-profile", auth, async (req, res) => {
   try {
     const role = req.headers.role; // Middleware se role pakda
     const { name, email, phone, address } = req.body;
-    
+
     // Update karne ke liye data object
     const updateFields = { name, email, phone, address };
     const options = { new: true, runValidators: true };
@@ -122,13 +122,13 @@ router.put("/doctor-panel-update-profile", auth, async (req, res) => {
     // Role ke basis par sahi Model choose karke update karna
     if (role === "staff") {
       updatedProfile = await Staff.findByIdAndUpdate(req.user.id, updateFields, options).select("-password");
-    } 
+    }
     else if (role === "astro") {
       updatedProfile = await Astrologer.findByIdAndUpdate(req.user.id, updateFields, options).select("-password");
-    } 
+    }
     else if (role === "chatuser") {
       updatedProfile = await ChatUser.findByIdAndUpdate(req.user.id, updateFields, options).select("-password");
-    } 
+    }
     else {
       updatedProfile = await User.findByIdAndUpdate(req.user.id, updateFields, options).select("-password");
     }
@@ -140,17 +140,17 @@ router.put("/doctor-panel-update-profile", auth, async (req, res) => {
       });
     }
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: "Profile successfully update ho gayi",
-      user: updatedProfile 
+      user: updatedProfile
     });
 
   } catch (err) {
     console.error("Update Error:", err);
-    res.status(500).json({ 
-      success: false, 
-      message: err.message || "Server error" 
+    res.status(500).json({
+      success: false,
+      message: err.message || "Server error"
     });
   }
 });
@@ -247,6 +247,11 @@ router.put("/questions/:id", updateQuestion);
 router.delete("/questions/:id", deleteQuestion);
 router.get("/questions/next", getNextQuestion);
 
-
+router.get('/mantras-astro/:astroId', getMantrasByAstro);
+router.get('/mantras/:id', getMantraById);
+router.post('/mantras/add', createMantra);
+router.put('/mantras/update/:id', updateMantra);
+router.delete('/mantras/delete/:id', deleteMantra);
+router.get('/mantras-all', getAllMantras);
 
 export default router;
