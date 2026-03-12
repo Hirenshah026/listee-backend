@@ -29,6 +29,10 @@ const astrologerSchema = new mongoose.Schema(
       required: true,
       minlength: 6,
     },
+    followers: { 
+      type: Number, 
+      default: 0 
+    },
   },
   {
     timestamps: true, // adds createdAt and updatedAt automatically
