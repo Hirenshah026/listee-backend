@@ -25,6 +25,7 @@ connectDB();
 app.use("/api", publicRoutes);
 app.use("/api", protectedRoutes);
 app.use("/api/messages", messageRoutes);
+app.use("/api/follow", followRoutes);
 
 const server = http.createServer(app);
 
