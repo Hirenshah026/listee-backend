@@ -1,5 +1,7 @@
 import express from "express";
 import multer from "multer";
+import path from "path";
+import fs from "fs";
 import auth from "../middleware/auth.js";
 import User from "../models/User.js";
 import ChatUser from "../models/ChatUser.js";
@@ -49,7 +51,8 @@ import {
   updateQuestion,
   deleteQuestion, getNextQuestion,
 } from "../controllers/questionController.js";
-import { createMantra, updateMantra, deleteMantra, getMantrasByAstro,getMantraById,getAllMantras } from '../controllers/mantraController.js';
+import { createMantra, updateMantra, deleteMantra, 
+  getMantrasByAstro,getMantraById,getAllMantras ,toggleLike} from '../controllers/mantraController.js';
 
 const router = express.Router();
 
@@ -157,12 +160,15 @@ router.put("/doctor-panel-update-profile", auth, async (req, res) => {
 
 // Multer Storage
 const storage = multer.diskStorage({
-  destination: "uploads/",
+  destination: (req, file, cb) => {
+    const uploadDir = "uploads/";
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+    cb(null, uploadDir);
+  },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
+    cb(null, Date.now() + "-" + file.originalname.replace(/\s/g, "_"));
   },
 });
-
 const upload = multer({ storage });
 
 /* ----------------- PROFILE PHOTO UPLOAD ----------------- */
@@ -249,9 +255,10 @@ router.get("/questions/next", getNextQuestion);
 
 router.get('/mantras-astro/:astroId', getMantrasByAstro);
 router.get('/mantras/:id', getMantraById);
-router.post('/mantras/add', createMantra);
-router.put('/mantras/update/:id', updateMantra);
+router.post('/mantras/add', auth, upload.single('image'), createMantra);
+router.put('/mantras/update/:id', auth, upload.single('image'), updateMantra);
 router.delete('/mantras/delete/:id', deleteMantra);
 router.get('/mantras-all', getAllMantras);
+router.post('/mantras/:id/like', toggleLike);
 
 export default router;
