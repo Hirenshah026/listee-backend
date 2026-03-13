@@ -7,6 +7,7 @@ import connectDB from "./config/db.js";
 import publicRoutes from "./routes/publicRoutes.js";
 import protectedRoutes from "./routes/protectedRoutes.js";
 import messageRoutes from "./routes/messageRoutes.js";
+import followRoutes from "./routes/followRoutes.js";
 import User from "./models/ChatUser.js";
 
 dotenv.config();
