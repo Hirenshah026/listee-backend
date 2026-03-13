@@ -9,7 +9,9 @@ const mantraSchema = new mongoose.Schema({
   },
   astroId: { type: mongoose.Schema.Types.ObjectId, ref: 'Astrologer' },
   astroName: { type: String },
-  category: { type: String }
+  category: { type: String },
+  likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  image: { type: String, default: "" },
 }, { 
   timestamps: true 
 });
